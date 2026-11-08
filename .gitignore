@@ -6,7 +6,7 @@
 __pycache__/
 .pytest_cache/
 
-# La base se crea desde datos/gastos.csv al usarse
+# La base se crea desde datos/*.csv al usarse
 *.db
 
 # Sistema

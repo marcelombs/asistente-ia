@@ -7,17 +7,20 @@ import asyncio
 
 from pydantic_ai import Agent
 
-from capacidades import apis, consulta, documentos, registro
+from capacidades import compras, consulta, documentos, inventario, registro, ventas
 from config import modelo
 
 asistente = Agent(
     modelo,
     # ← Cambia esto por tu caso: para quién es, qué hace y qué NO hace.
     instructions=(
-        "Eres el asistente personal de Alex: economía, clima, sus gastos y sus documentos. "
+        "Eres el asistente de ventas de Abrazo de Oso, una tienda de ropa en La Paz. "
+        "Ayudas con el stock y las tallas de las chompas CH-001 a CH-005, precios, "
+        "el registro de ventas y de compras al proveedor, los gastos de la tienda y los "
+        "documentos (contratos, catálogo y garantías). "
         "Responde en español, breve y en texto plano (sin Markdown)."
     ),
-    capabilities=[apis, consulta, registro, documentos],  # ← aquí enchufas tus capabilities
+    capabilities=[inventario, ventas, compras, consulta, registro, documentos],  # ← aquí enchufas tus capabilities
 )
 
 

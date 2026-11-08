@@ -23,8 +23,8 @@ from config import settings  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def base_temporal(tmp_path, monkeypatch):
-    """Cada prueba usa su propia gastos.db, no la de datos/."""
-    monkeypatch.setattr(capacidades, "DB", tmp_path / "gastos.db")
+    """Cada prueba usa su propia tienda.db, no la de datos/."""
+    monkeypatch.setattr(capacidades, "DB", tmp_path / "tienda.db")
 
 
 def pide(tool: str, args: dict) -> FunctionModel:
@@ -39,27 +39,79 @@ def pide(tool: str, args: dict) -> FunctionModel:
     return FunctionModel(responder)
 
 
+# ── Gastos de la tienda ──
+
+
 def test_consultar_gastos_sin_modelo():
     gastos = capacidades.consultar_gastos("transporte")  # una tool es una función normal
-    assert gastos["total_bs"] == 67
+    assert gastos["total_bs"] == 60
 
 
 async def test_registrar_gasto_escribe_en_la_base():
     with asistente.asistente.override(model=pide("registrar_gasto", {
-        "fecha": "2030-05-14", "categoria": "ocio", "descripcion": "Teatro", "monto": 30,
+        "fecha": "2026-11-07", "categoria": "marketing", "descripcion": "Flyers", "monto": 30,
     })):
-        respuesta = await asistente.responder("Anota 30 Bs de teatro.")
+        respuesta = await asistente.responder("Anota 30 Bs de marketing.")
     assert "Gasto registrado" in respuesta
-    assert capacidades.consultar_gastos("ocio")["total_bs"] == 70  # 40 del CSV + 30
+    assert capacidades.consultar_gastos("marketing")["total_bs"] == 150  # 120 del CSV + 30
 
 
 async def test_monto_negativo_no_se_guarda():
     with asistente.asistente.override(model=pide("registrar_gasto", {
-        "fecha": "2030-05-14", "categoria": "ocio", "descripcion": "Error", "monto": -5,
+        "fecha": "2026-11-07", "categoria": "marketing", "descripcion": "Error", "monto": -5,
     })):
         respuesta = await asistente.responder("Anota -5 Bs.")
     assert "No se guardó" in respuesta
-    assert capacidades.consultar_gastos("ocio")["total_bs"] == 40
+    assert capacidades.consultar_gastos("marketing")["total_bs"] == 120
+
+
+# ── Inventario: stock, ventas y compras ──
+
+
+def test_consultar_stock():
+    stock = capacidades.consultar_stock("CH-001", "M")
+    assert stock[0]["cantidad"] == 12
+    assert stock[0]["precio"] == 180
+
+
+def test_consultar_stock_sin_coincidencia():
+    resultado = capacidades.consultar_stock("CH-001", "XXL")
+    assert "error" in resultado
+
+
+async def test_registrar_venta_descuenta_stock():
+    with asistente.asistente.override(model=pide("registrar_venta", {
+        "fecha": "2026-11-07", "modelo": "CH-001", "talla": "M", "cantidad": 2,
+    })):
+        respuesta = await asistente.responder("Vendí 2 chompas CH-001 talla M.")
+    assert "Venta registrada" in respuesta
+    assert capacidades.consultar_stock("CH-001", "M")[0]["cantidad"] == 10  # 12 - 2
+    ventas = capacidades.consultar_ventas(modelo="CH-001")
+    assert ventas[0]["total"] == 360  # 2 x 180
+
+
+async def test_venta_sin_stock_no_se_registra():
+    with asistente.asistente.override(model=pide("registrar_venta", {
+        "fecha": "2026-11-07", "modelo": "CH-003", "talla": "L", "cantidad": 99,
+    })):
+        respuesta = await asistente.responder("Vendí 99 CH-003 talla L.")
+    assert "No se registró" in respuesta
+    assert capacidades.consultar_stock("CH-003", "L")[0]["cantidad"] == 5  # sin cambios
+    assert "error" in capacidades.consultar_ventas(modelo="CH-003")  # no se anotó nada
+
+
+async def test_registrar_compra_suma_stock():
+    with asistente.asistente.override(model=pide("registrar_compra", {
+        "fecha": "2026-11-07", "modelo": "CH-005", "talla": "S", "cantidad": 12,
+    })):
+        respuesta = await asistente.responder("Llegó un pedido de 12 CH-005 talla S.")
+    assert "Compra registrada" in respuesta
+    assert capacidades.consultar_stock("CH-005", "S")[0]["cantidad"] == 17  # 5 + 12
+    compras = capacidades.consultar_compras(modelo="CH-005")
+    assert compras[0]["total"] == 3600  # 12 x 300 (costo del proveedor)
+
+
+# ── Bot de Telegram ──
 
 
 async def test_chat_ajeno_se_rechaza_sin_llamar_al_modelo(monkeypatch):
@@ -116,4 +168,4 @@ async def test_api_con_token_responde(monkeypatch):
     with asistente.asistente.override(model=pide("consultar_gastos", {"categoria": "transporte"})):
         r = await post_chat({"mensaje": "¿Cuánto gasté en transporte?"}, "def")
     assert r.status_code == 200
-    assert "67" in r.json()["texto"]
+    assert "60" in r.json()["texto"]
